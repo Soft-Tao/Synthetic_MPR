@@ -1,0 +1,101 @@
+# Synthetic Magnetic Proton Recoil (MPR) Simulator
+
+## Overview
+This Python code simulates the behavior of charged particles (protons and alpha particles) in a magnetic spectrometer system. It models:
+1. Particle generation from neutron interactions in a target material
+2. Energy loss calculations as particles traverse materials
+3. Particle trajectories in complex 3D magnetic fields
+4. Detection at a focal plane
+
+The simulation is particularly useful for neutron spectroscopy applications using Magnetic Proton Recoil (MPR) techniques.
+
+## Key Features
+
+### 1. Particle Physics Modeling
+- **Charged particle dynamics** (protons and alpha particles)
+- **Energy loss calculations** using stopping power data
+- **Realistic scattering kinematics** (n-p scattering)
+
+### 2. Geometry Components
+```python
+# Aperture definition
+Aperture1 = Aperture(r=0.41, theta=90, phi=120, 
+                     l1=0.016, l2=0.04, d=0.05)
+
+# Target definition
+NPtarget1 = NPtarget(l1=0.016, l2=0.04, d=0.000092, 
+                     angle=30, target_name="CH2")
+```
+
+### 3. Magnetic Field Handling
+```python
+# Magnetic field initialization
+MagField = MagneticField3D(Xshift=-0.225, Yshift=0.37, Zshift=0)
+MagField.Read_Bfield2()
+```
+
+### 4. Particle Transport
+- **Boris algorithm** for particle pushing in magnetic fields
+- **3D interpolation** of magnetic field vectors
+- **Trajectory recording** with configurable detail
+
+## Key Components
+
+### 1. Particle Class (`Particle`)
+- Tracks position, velocity, and time-of-flight
+- Implements Boris push algorithm for magnetic field integration
+- Records particle trajectories
+
+### 2. Target Class (`NPtarget`)
+- Models energy loss in materials (currently CH2)
+- Calculates exit points and energies
+- Handles target rotation and geometry
+
+### 3. Magnetic Field Class (`MagneticField3D`)
+- Loads magnetic field data from files
+- Provides 3D interpolation of field vectors
+- Handles coordinate transformations
+
+### 4. Beam Initialization (`Beam_init`)
+- Generates particles with proper kinematics
+- Calculates angular distributions through apertures
+- Simulates energy loss in targets
+
+## Usage Example
+
+```python
+# Initialize beam of 15 protons from 14 MeV neutrons
+test_particles = Beam_init(Nparticle=15, 
+                          target=NPtarget1, 
+                          Neutron_E=14, 
+                          Neutron_the=90, 
+                          Neutron_phi=170)
+```
+
+## Configuration Parameters
+| Parameter | Description | Default Value |
+|-----------|-------------|---------------|
+| `data_dir` | Directory for input data | `"init_data"` |
+| `IsTraceSaved` | Enable trajectory recording | `True` |
+| `Aperture` | Defines collimator geometry | r=0.41m, l1=0.016m, l2=0.04m, d=0.05m |
+| `NPtarget` | Target specifications | l1=0.016m, l2=0.04m, d=92μm, angle=30° |
+
+## Dependencies
+- NumPy
+- SciPy
+- scipy.constants
+- scipy.interpolate
+- scipy.io (for MATLAB file handling)
+
+## Data Requirements
+1. Stopping power data (`ESP.dat`)
+2. Magnetic field data (`combined_field_upgrade.txt`)
+3. Optional: MATLAB format field data (`BposX.mat`, `BposY.mat`, `BposZ.mat`)
+
+## Applications
+- Neutron spectroscopy
+- Radiation detector design
+- Particle spectrometer simulation
+- Nuclear physics experiments
+
+To run the simulation, configure the parameters at the bottom of the file and execute the script. The code will generate particles, simulate their trajectories, and provide output on energy deposition and detection positions.
