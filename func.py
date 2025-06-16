@@ -1,3 +1,10 @@
+"""
+***Synthetic MPR***
+    > Focal plane and n-p transition efficiency are not considered in this version...
+Author: Xutao Xu
+Date: June 16th, 2025
+"""
+
 import numpy as np
 import scipy.io as sio
 from scipy.interpolate import RegularGridInterpolator
@@ -72,7 +79,7 @@ class NPtarget:
 
         if target_name == "CH2":
             self.ESP = np.loadtxt(data_dir + "/ESP.dat") # ESP: [MeV/(g/cm^2)] - E: [MeV]
-            self.density = 0.96 # [g/cm^3]
+            self.density = 0.1 # [g/cm^3]
         else:
             raise ValueError("Unknown target name: " + target_name)
 
@@ -89,8 +96,8 @@ class NPtarget:
     def get_Energy_loss(self, starting_pos, starting_E, theta, phi):
         x,y,z = starting_pos 
         # rotate <self.angle>, clockwise
-        x1 = x*np.cos(self.angle) + y*np.sin(self.angle)
-        y1 = -x*np.sin(self.angle) + y*np.cos(self.angle)
+        x1 = x*np.cos(self.angle*np.pi/180) + y*np.sin(self.angle*np.pi/180)
+        y1 = -x*np.sin(self.angle*np.pi/180) + y*np.cos(self.angle*np.pi/180)
         z1 = z
 
         # unit vector
@@ -98,8 +105,8 @@ class NPtarget:
         dy = np.sin(theta)*np.sin(phi)  
         dz = np.cos(theta)
         # unit vector in local coordinate system
-        dx1 = dx*np.cos(self.angle) + dy*np.sin(self.angle)
-        dy1 = -dx*np.sin(self.angle) + dy*np.cos(self.angle)
+        dx1 = dx*np.cos(self.angle*np.pi/180) + dy*np.sin(self.angle*np.pi/180)
+        dy1 = -dx*np.sin(self.angle*np.pi/180) + dy*np.cos(self.angle*np.pi/180)
         dz1 = dz
 
         x_min, x_max, y_min, y_max, z_min, z_max = -self.l1/2, self.l1/2, -self.d/2, self.d/2, -self.l2/2, self.l2/2
@@ -123,38 +130,47 @@ class NPtarget:
                 t_z = (z_min - z1) / dz1
             t_values.append(t_z)
         t_min = min(t for t in t_values if t > 0) # length in target [m]
-        E_exit = max(1e-3, starting_E - t_min * self.get_ESP_at(starting_E))
+        print(f"travel length from birth to exit: {t_min:.6f} m")
+
+        # calculate the energy loss
+        # step by step, calculate energy loss at each step (more accurate)
+        s0 = 0
+        ds = self.d/1000 # [m], step length
+        while (s0 < t_min):
+            s0 += ds
+            starting_E -= ds * self.get_ESP_at(starting_E)
+            if starting_E < 0.1: # [MeV]
+                starting_E = 0.1
+                break
+        E_exit = starting_E
 
         exit_x1 = x1 + t_min * dx1
         exit_y1 = y1 + t_min * dy1
         exit_z1 = z1 + t_min * dz1
         # find the exit point, rotate back
-        exit_x = exit_x1*np.cos(self.angle) - exit_y1*np.sin(self.angle)
-        exit_y = exit_x1*np.sin(self.angle) + exit_y1*np.cos(self.angle)
+        exit_x = exit_x1*np.cos(self.angle*np.pi/180) - exit_y1*np.sin(self.angle*np.pi/180)
+        exit_y = exit_x1*np.sin(self.angle*np.pi/180) + exit_y1*np.cos(self.angle*np.pi/180)
         exit_z = exit_z1
 
         return E_exit, [exit_x, exit_y, exit_z]
 
 class MagneticField3D:
     def __init__(self, Xshift, Yshift, Zshift): 
-        # Cooridinates of MagFieldGrid's origin in the new coordinate system (Xshift, Yshift, Zshift) [m]
-        self.xgrid = sio.loadmat(data_dir + "/BposX.mat")["B_posX"][:,0]/1000 + Xshift # [m]
-        self.ygrid = sio.loadmat(data_dir + "/BposY.mat")["B_posY"][:,0]/1000 + Yshift # [m]
-        self.zgrid = sio.loadmat(data_dir + "/BposZ.mat")["B_posZ"][:,0]/1000 + Zshift # [m]
-
-        self.Nx = len(self.xgrid)
-        self.Ny = len(self.ygrid)
-        self.Nz = len(self.zgrid)
-        print("Spatial Grid of MagField: Nx, Ny, Nz = ", self.Nx, self.Ny, self.Nz)
-
-        self.Bx = sio.loadmat(data_dir + "/Bxfield.mat")["Bf_X"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
-        self.By = sio.loadmat(data_dir + "/Byfield.mat")["Bf_Y"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
-        self.Bz = sio.loadmat(data_dir + "/Bzfield.mat")["Bf_Z"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
-
+        self.xgrid = None
+        self.ygrid = None
+        self.zgrid = None
+        self.Nx = None
+        self.Ny = None
+        self.Nz = None
+        self.Bx = None
+        self.By = None
+        self.Bz = None
+        self.Xshift = Xshift
+        self.Yshift = Yshift
+        self.Zshift = Zshift
         self._Bx_interp = None
         self._By_interp = None
         self._Bz_interp = None
-        print("""MagField3D initialized!""")
 
     def _initialize_interpolators(self):
         self._Bx_interp = RegularGridInterpolator((self.xgrid, self.ygrid, self.zgrid), self.Bx)
@@ -173,15 +189,51 @@ class MagneticField3D:
         Bz = self._Bz_interp([[x, y, z]])[0]
         return Bx, By, Bz
     
+    def Read_Bfield1(self):
+        # Cooridinates of MagFieldGrid's origin in the new coordinate system (Xshift, Yshift, Zshift) [m]
+        self.xgrid = sio.loadmat(data_dir + "/BposX.mat")["B_posX"][:,0]/1000 + self.Xshift # [m]
+        self.ygrid = sio.loadmat(data_dir + "/BposY.mat")["B_posY"][:,0]/1000 + self.Yshift # [m]
+        self.zgrid = sio.loadmat(data_dir + "/BposZ.mat")["B_posZ"][:,0]/1000 + self.Zshift # [m]
+
+        self.Nx = len(self.xgrid)
+        self.Ny = len(self.ygrid)
+        self.Nz = len(self.zgrid)
+        print("Spatial Grid of MagField: Nx, Ny, Nz = ", self.Nx, self.Ny, self.Nz)
+
+        self.Bx = sio.loadmat(data_dir + "/Bxfield.mat")["Bf_X"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
+        self.By = sio.loadmat(data_dir + "/Byfield.mat")["Bf_Y"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
+        self.Bz = sio.loadmat(data_dir + "/Bzfield.mat")["Bf_Z"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
+        print("MagField is loaded!")
+    
+    def Read_Bfield2(self):
+        # Read MagField from .dat file: X, Y, Z, Bx, By, Bz [m, m, m, T, T, T] \n
+        # Cooridinates of MagFieldGrid's origin in the new coordinate system (Xshift, Yshift, Zshift) [m]
+        # Nx = 91, Ny = 205, Nz = 41
+        data = np.loadtxt(data_dir + "/combined_field_upgrade.txt", skiprows=2)
+        self.xgrid = data[:,0].reshape((41, 205, 91))[0,0,:]/1000 + self.Xshift # [m]
+        self.ygrid = data[:,1].reshape((41, 205, 91))[0,:,0]/1000 + self.Yshift # [m]
+        self.zgrid = data[:,2].reshape((41, 205, 91))[:,0,0]/1000 + self.Zshift # [m]
+
+        self.Nx = 91
+        self.Ny = 205
+        self.Nz = 41
+        print("Spatial Grid of MagField: Nx, Ny, Nz = ", self.Nx, self.Ny, self.Nz)
+
+        self.Bx = np.transpose(data[:,3].reshape((41, 205, 91)), (2, 1, 0)) # [T]
+        self.By = np.transpose(data[:,4].reshape((41, 205, 91)), (2, 1, 0)) # [T]
+        self.Bz = np.transpose(data[:,5].reshape((41, 205, 91)), (2, 1, 0)) # [T]
+        print("MagField is loaded!")
+
     # This fuction is mainly used for testing
     # Loading arbitrary Bfield with xgrid, ygrid, zgrid [Narray of size Nx, Ny and Nz] and Bx, By, Bz [Narray of size (Nx, Ny, Nz)]
-    def reset_field(self, xgrid, ygrid, zgrid, Bx, By, Bz):
+    def Arbitrary_Bfield(self, xgrid, ygrid, zgrid, Bx, By, Bz):
         self.xgrid = xgrid
         self.ygrid = ygrid
         self.zgrid = zgrid
         self.Bx = Bx
         self.By = By
         self.Bz = Bz
+        print("MagField is loaded!")
 
 def Beam_init(Nparticle, target: NPtarget, Neutron_E, Neutron_the, Neutron_phi):
 
@@ -230,15 +282,16 @@ def Beam_init(Nparticle, target: NPtarget, Neutron_E, Neutron_the, Neutron_phi):
         neutron_direction = np.array([np.sin(Neutron_the*np.pi/180)*np.cos(Neutron_phi*np.pi/180), np.sin(Neutron_the*np.pi/180)*np.sin(Neutron_phi*np.pi/180), np.cos(Neutron_the*np.pi/180)])
 
         starting_E = Neutron_E*(np.dot(proton_direction, neutron_direction))**2
-        print("Starting Energy: ", starting_E, " MeV")
 
         # Get ENERGY and POSITION when leave the target
         # need to find energy loss first
         # find the length in target
         starting_E, starting_pos = target.get_Energy_loss(starting_pos, starting_E, theta, phi)
+        print(f"Starting Energy: {starting_E:.3f} MeV")
             
         Particle_lst.append(Particle(starting_posX=starting_pos[0], starting_posY=starting_pos[1], starting_posZ=starting_pos[2], starting_E=starting_E, starting_theta=theta*180/np.pi, starting_phi=phi*180/np.pi, particle_name="proton"))
 
+    print(f"Beam initialized with {Nparticle} particles, neutron beam energy: {Neutron_E} MeV.")
     return Particle_lst
 
 # <<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>> #
@@ -247,17 +300,12 @@ data_dir = "init_data"
 IsTraceSaved = True
 # -------------Initialization------------- #
 # length: m, angle: degree, energy: MeV
-Aperture1 = Aperture(r=0.6, theta=90, phi=120, l1=0.00016, l2=0.0004, d=0.01)
+Aperture1 = Aperture(r=0.41, theta=90, phi=120, l1=0.016, l2=0.04, d=0.05)
 
-NPtarget1 = NPtarget(l1=0.00016, l2=0.0004, d=9.6e-6, angle=30, target_name="CH2")
+NPtarget1 = NPtarget(l1=0.016, l2=0.04, d=0.000092, angle=30, target_name="CH2")
 
-MagField = MagneticField3D(Xshift=-0.38, Yshift=0.8, Zshift=0)
+MagField = MagneticField3D(Xshift=-0.225, Yshift=0.37, Zshift=0)
+MagField.Read_Bfield2()
 
-test_particles = Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=14, Neutron_the=90, Neutron_phi=145)
-test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=12, Neutron_the=90, Neutron_phi=145)
-test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=10, Neutron_the=90, Neutron_phi=145)
-test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=8, Neutron_the=90, Neutron_phi=145)
-test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=6, Neutron_the=90, Neutron_phi=145)
-test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=4, Neutron_the=90, Neutron_phi=145)
+test_particles = Beam_init(Nparticle=15, target=NPtarget1, Neutron_E=14, Neutron_the=90, Neutron_phi=170)
 # <<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>> #
-
