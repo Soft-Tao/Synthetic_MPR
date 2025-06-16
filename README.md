@@ -100,3 +100,29 @@ test_particles = Beam_init(Nparticle=15,
 - Nuclear physics experiments
 
 To run the simulation, configure the parameters at the bottom of the file and execute the script. The code will generate particles, simulate their trajectories, and provide output on energy deposition and detection positions.
+
+A simple main structure of the main program could be:
+```
+Aperture1 = Aperture(r=0.41, theta=90, phi=120, l1=0.016, l2=0.04, d=0.05)
+
+NPtarget1 = NPtarget(l1=0.016, l2=0.04, d=0.000092, angle=30, target_name="CH2")
+
+MagField = MagneticField3D(Xshift=-0.225, Yshift=0.37, Zshift=0)
+MagField.Read_Bfield2()
+
+test_particles = Beam_init(Nparticle=15, target=NPtarget1, Neutron_E=14, Neutron_the=90, Neutron_phi=170)
+
+dt = 1e-12
+t_max = 1e-8
+t_now = 0
+step = 0
+
+while t_now < t_max:
+    step += 1
+    t_now += dt
+    for test_particle in test_particles:
+        test_particle.Boris_push(MagField.get_Bvector_at(test_particle.pos[0], test_particle.pos[1], test_particle.pos[2]), dt)
+        if step % 10 == 0:
+            test_particle.record_pos()
+print("Done!")
+```
