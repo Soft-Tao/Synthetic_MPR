@@ -167,7 +167,3 @@ The simulation implements:
    $$\vec{v}_{n+1} = M^{-1} \vec{v}_n$$
 4. **Magnetic Lorentz force**:
    $$\vec{F} = q(\vec{v} \times \vec{B})$$
-
-![Simulation Workflow](https://example.com/simulation_diagram.png)
-
-*Schematic of the MPR simulation workflow showing neutron interaction, proton recoil, and magnetic transport to focal plane*
