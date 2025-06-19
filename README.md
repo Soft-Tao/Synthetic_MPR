@@ -1,4 +1,4 @@
-# Synthetic Magnetic Proton Recoil (MPR) Simulator v2.0
+# Synthetic Magnetic Proton Recoil (MPR) Simulator
 
 **Author**: Xutao Xu  
 **Date**: June 18, 2025  
