@@ -1,8 +1,9 @@
 """
 ***Synthetic MPR***
     > n-p transition efficiency are not considered in this version...
+    > relaivity effect is considered through a simple assumption that |v| dosn't change during the flight in magnets
 Author: Xutao Xu
-Date: June 18th, 2025
+Date: June 20th, 2025
 """
 
 import numpy as np
@@ -42,8 +43,16 @@ class Particle:
         # (E [MeV], theta [degree], phi [degree]) to (vx, vy, vz) [m/s]
         the_ = starting_theta*np.pi/180
         phi_ = starting_phi*np.pi/180
-        vel_ = np.sqrt(2*starting_E*1e6*physical_constants["electron volt"][0]/self.m)
-        self.vel = np.array([vel_*np.sin(the_)*np.cos(phi_), vel_*np.sin(the_)*np.sin(phi_), vel_*np.cos(the_)])
+
+        if not IsClassical: # modify mass to simulate relativistic particle 
+            gamma = (starting_E*1e6*physical_constants["electron volt"][0] + self.m*physical_constants["speed of light in vacuum"][0]**2)/(self.m*physical_constants["speed of light in vacuum"][0]**2)
+            p = self.m*physical_constants["speed of light in vacuum"][0]*np.sqrt(gamma**2 - 1)
+            self.m *= gamma
+            vel_ = p / self.m # now m is the relativistic mass
+            self.vel = np.array([vel_*np.sin(the_)*np.cos(phi_), vel_*np.sin(the_)*np.sin(phi_), vel_*np.cos(the_)])
+        else:
+            vel_ = np.sqrt(2*starting_E*1e6*physical_constants["electron volt"][0]/self.m)
+            self.vel = np.array([vel_*np.sin(the_)*np.cos(phi_), vel_*np.sin(the_)*np.sin(phi_), vel_*np.cos(the_)])
 
         self.name = particle_name
         if IsTraceSaved:
@@ -53,13 +62,13 @@ class Particle:
         
     def Boris_push(self, BfieldVec, dt):
         if not self.IsArrived:
-            A = self.q*dt/(2*self.m)
-            # Only magnetic field is considered, to form the coefficient matrix:
-            M = np.array([[1, -A*BfieldVec[2], A*BfieldVec[1]], [A*BfieldVec[2], 1, -A*BfieldVec[0]], [-A*BfieldVec[1], A*BfieldVec[0], 1]])
+            # Boris push without Efiled
+            v_minus = self.vel
+            t = (self.q * dt / (2 * self.m)) * np.array(BfieldVec)
+            s = 2 * t / (1 + np.dot(t, t))
+            v_plus = v_minus + np.cross(v_minus, t)
+            self.vel = v_minus + np.cross(v_plus, s)
 
-            # v_{n+1} = M^{-1} \cdot v_{n}
-            self.vel = np.matmul(np.linalg.inv(M), self.vel)
-            # r_{n+1} = r_{n} + v_{n+1} \cdot dt
             old_pos = self.pos 
             self.pos = self.pos + self.vel*dt
             self.tof += dt
@@ -238,23 +247,24 @@ class MagneticField3D:
         self.Bz = sio.loadmat(data_dir + "/Bzfield.mat")["Bf_Z"].reshape((self.Nx, self.Ny, self.Nz)) # [T]
         print("MagField is loaded!")
     
-    def Read_Bfield2(self, factor = 1):
+    def Read_Bfield2(self, file_name, factor = 1):
         # Read MagField from .dat file: X, Y, Z, Bx, By, Bz [m, m, m, T, T, T] \n
         # Cooridinates of MagFieldGrid's origin in the new coordinate system (Xshift, Yshift, Zshift) [m]
-        # Nx = 91, Ny = 205, Nz = 41
-        data = np.loadtxt(data_dir + "/combined_field_upgrade.txt", skiprows=2)
-        self.xgrid = data[:,0].reshape((41, 205, 91))[0,0,:]/1000 + self.Xshift # [m]
-        self.ygrid = data[:,1].reshape((41, 205, 91))[0,:,0]/1000 + self.Yshift # [m]
-        self.zgrid = data[:,2].reshape((41, 205, 91))[:,0,0]/1000 + self.Zshift # [m]
 
-        self.Nx = 91
-        self.Ny = 205
-        self.Nz = 41
+        data = np.loadtxt(data_dir + "/" + file_name, skiprows=1)
+        self.Nx = int(data[0][0]) # second row of .txt file: "Nx 000 Ny 000 Nz 000"
+        self.Ny = int(data[0][2])
+        self.Nz = int(data[0][4])
+
+        self.xgrid = data[1:,0].reshape((self.Nz, self.Ny, self.Nx))[0,0,:]/1000 + self.Xshift # [m]
+        self.ygrid = data[1:,1].reshape((self.Nz, self.Ny, self.Nx))[0,:,0]/1000 + self.Yshift # [m]
+        self.zgrid = data[1:,2].reshape((self.Nz, self.Ny, self.Nx))[:,0,0]/1000 + self.Zshift # [m]
+
         print("Spatial Grid of MagField: Nx, Ny, Nz = ", self.Nx, self.Ny, self.Nz)
 
-        self.Bx = np.transpose(data[:,3].reshape((41, 205, 91)), (2, 1, 0))*factor # [T]
-        self.By = np.transpose(data[:,4].reshape((41, 205, 91)), (2, 1, 0))*factor # [T]
-        self.Bz = np.transpose(data[:,5].reshape((41, 205, 91)), (2, 1, 0))*factor # [T] # can be manually changed by setting factor != 1
+        self.Bx = np.transpose(data[1:,3].reshape((self.Nz, self.Ny, self.Nx)), (2, 1, 0))*factor # [T]
+        self.By = np.transpose(data[1:,4].reshape((self.Nz, self.Ny, self.Nx)), (2, 1, 0))*factor # [T]
+        self.Bz = np.transpose(data[1:,5].reshape((self.Nz, self.Ny, self.Nx)), (2, 1, 0))*factor # [T] # can be manually changed by setting factor != 1
         print("MagField is loaded!")
 
     # This fuction is mainly used for testing
@@ -373,16 +383,22 @@ def line_segment_intersection(A1, A2, B1, B2):
 # ---------------Parameters--------------- #
 data_dir = "init_data"
 IsTraceSaved = True
+IsClassical = False
 # -------------Initialization------------- #
 # length: m, angle: degree, energy: MeV
 Aperture1 = Aperture(r=0.41, theta=90, phi=120, l1=0.005, l2=0.01, d=0.05)
 
 NPtarget1 = NPtarget(l1=0.005, l2=0.01, d=0.000092, angle=30, target_name="CH2")
 
-FocalPlane1 = FocalPlane(x1 = -0.251, y1 =1.569, x2 = -0.306, y2 = 1.830)
+#FocalPlane1 = FocalPlane(x1 = -0.297, y1 = 2.079, x2 = -0.262, y2 = 1.527)
+FocalPlane1 = FocalPlane(x1 = -0.297, y1 = 3.079, x2 = -0.262, y2 = 2.527)
 
 MagField = MagneticField3D(Xshift=-0.3, Yshift=0.52, Zshift=0)
-MagField.Read_Bfield2(factor=1.6)
+MagField.Read_Bfield2(file_name="combined_field_upgrade.txt")
 
-test_particles = Beam_init(Nparticle=100, target=NPtarget1, Neutron_E=14, Neutron_the=90, Neutron_phi=150, IsParallel=True)
+test_particles = Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=14, Neutron_the=90, Neutron_phi=150, IsParallel=True)
+test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=12, Neutron_the=90, Neutron_phi=150, IsParallel=True)
+test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=13, Neutron_the=90, Neutron_phi=150, IsParallel=True)
+test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=15, Neutron_the=90, Neutron_phi=150, IsParallel=True)
+test_particles += Beam_init(Nparticle=10, target=NPtarget1, Neutron_E=16, Neutron_the=90, Neutron_phi=150, IsParallel=True)
 # <<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>> #
