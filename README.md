@@ -1,13 +1,16 @@
 # Synthetic Magnetic Proton Recoil (MPR) Simulator
 
 **Author**: Xutao Xu  
-**Date**: June 18, 2025  
+**Date**: June 20, 2025  
 
 <div align="center">
   <img src="https://img.shields.io/badge/Python-3.8%2B-blue" alt="Python Version">
   <img src="https://img.shields.io/badge/Physics-Nuclear%20Spectroscopy-green" alt="Physics">
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status">
 </div>
+
+**Update log**:
+ - 2025.06.20: Fixed issues of relativistic modification and problems of Boris algorithm
 
 ## Overview
 This advanced Python simulation models charged particle behavior in magnetic spectrometer systems for neutron spectroscopy applications. The v2.0 update introduces significant enhancements:
