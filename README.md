@@ -48,7 +48,7 @@ FocalPlane1 = FocalPlane(x1=-0.251, y1=1.569, x2=-0.306, y2=1.830)
 ```python
 # Magnetic field with coordinate transformation
 MagField = MagneticField3D(Xshift=-0.3, Yshift=0.52, Zshift=0)
-MagField.Read_Bfield2(factor=1.6)  # Field strength scaling
+MagField.Read_Bfield2(file_name="test_Bfieled.txt", factor=1.6)  # Field strength scaling
 ```
 
 ### 4. Precision Collision Detection
@@ -85,6 +85,7 @@ def line_segment_intersection(A1, A2, B1, B2):
 - Generates particles with proper kinematics
 - Angular spread or parallel beam options
 - Simulates energy loss in targets
+- Using `IsParallel`, you can set all particles' direction to be parallel when you're trying to find focal points. 
 
 ## Configuration Parameters
 | Parameter | Description | Default Value |
@@ -103,12 +104,15 @@ Aperture1 = Aperture(r=0.41, theta=90, phi=120, l1=0.005, l2=0.01, d=0.05)
 NPtarget1 = NPtarget(l1=0.005, l2=0.01, d=0.000092, angle=30, target_name="CH2")
 FocalPlane1 = FocalPlane(x1=-0.251, y1=1.569, x2=-0.306, y2=1.830)
 MagField = MagneticField3D(Xshift=-0.3, Yshift=0.52, Zshift=0)
-MagField.Read_Bfield2(factor=1.6)
+MagField.Read_Bfield2(file_name = "test_Bfield.txt", factor=1.6)
 
 # Generate parallel beam for focal plane calibration
 test_particles = Beam_init(Nparticle=100, target=NPtarget1, 
                            Neutron_E=14, Neutron_the=90, 
                            Neutron_phi=150, IsParallel=True)
+test_particles += Beam_init(Nparticle=100, target=NPtarget1, 
+                           Neutron_E=13, Neutron_the=90, 
+                           Neutron_phi=150) # Default value of IsParallel is False
 
 # Simulation parameters
 dt = 1e-12
